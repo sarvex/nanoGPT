@@ -220,7 +220,7 @@ class GPT(nn.Module):
         # only dropout can be overridden see more notes below
         assert all(k == 'dropout' for k in override_args)
         from transformers import GPT2LMHeadModel
-        print("loading weights from pretrained gpt: %s" % model_type)
+        print(f"loading weights from pretrained gpt: {model_type}")
 
         # n_layer, n_head and n_embd are determined from model_type
         config_args = {
@@ -285,7 +285,7 @@ class GPT(nn.Module):
         blacklist_weight_modules = (torch.nn.LayerNorm, LayerNorm, torch.nn.Embedding)
         for mn, m in self.named_modules():
             for pn, p in m.named_parameters():
-                fpn = '%s.%s' % (mn, pn) if mn else pn # full param name
+                fpn = f'{mn}.{pn}' if mn else pn
                 # random note: because named_modules and named_parameters are recursive
                 # we will see the same tensors p many many times. but doing it this way
                 # allows us to know which parent module any tensor p belongs to...
@@ -308,12 +308,15 @@ class GPT(nn.Module):
         decay.remove('lm_head.weight')
 
         # validate that we considered every parameter
-        param_dict = {pn: p for pn, p in self.named_parameters()}
+        param_dict = dict(self.named_parameters())
         inter_params = decay & no_decay
         union_params = decay | no_decay
-        assert len(inter_params) == 0, "parameters %s made it into both decay/no_decay sets!" % (str(inter_params), )
-        assert len(param_dict.keys() - union_params) == 0, "parameters %s were not separated into either decay/no_decay set!" \
-                                                    % (str(param_dict.keys() - union_params), )
+        assert (
+            len(inter_params) == 0
+        ), f"parameters {str(inter_params)} made it into both decay/no_decay sets!"
+        assert (
+            len(param_dict.keys() - union_params) == 0
+        ), f"parameters {str(param_dict.keys() - union_params)} were not separated into either decay/no_decay set!"
 
         # create the pytorch optimizer object
         optim_groups = [
@@ -323,10 +326,10 @@ class GPT(nn.Module):
         # new PyTorch nightly has a new 'fused' option for AdamW that is much faster
         use_fused = (device_type == 'cuda') and ('fused' in inspect.signature(torch.optim.AdamW).parameters)
         print(f"using fused AdamW: {use_fused}")
-        extra_args = dict(fused=True) if use_fused else dict()
-        optimizer = torch.optim.AdamW(optim_groups, lr=learning_rate, betas=betas, **extra_args)
-
-        return optimizer
+        extra_args = dict(fused=True) if use_fused else {}
+        return torch.optim.AdamW(
+            optim_groups, lr=learning_rate, betas=betas, **extra_args
+        )
 
     def estimate_mfu(self, fwdbwd_per_iter, dt):
         """ estimate model flops utilization (MFU) in units of A100 bfloat16 peak FLOPS """
@@ -341,8 +344,7 @@ class GPT(nn.Module):
         # express our flops throughput as ratio of A100 bfloat16 peak flops
         flops_achieved = flops_per_iter * (1.0/dt) # per second
         flops_promised = 312e12 # A100 GPU bfloat16 peak flops is 312 TFLOPS
-        mfu = flops_achieved / flops_promised
-        return mfu
+        return flops_achieved / flops_promised
 
     @torch.no_grad()
     def generate(self, idx, max_new_tokens, temperature=1.0, top_k=None):
